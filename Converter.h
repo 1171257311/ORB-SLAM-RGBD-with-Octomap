@@ -1,6 +1,6 @@
 /**
 * This file is part of ORB-SLAM2.
-* 各种类型转换函数，多一个旋转矩阵 转四元素??
+* 各种类型转换函数，多一个 四元素 转旋转矩阵
 */
 
 #ifndef CONVERTER_H
