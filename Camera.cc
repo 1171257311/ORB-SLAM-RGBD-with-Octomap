@@ -1,3 +1,7 @@
+/*
+orb-slam2 抽离出来 相机数据对象
+实现从文件载入相机参数的方法
+*/
 
 #include <iostream>
 
