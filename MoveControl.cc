@@ -3,10 +3,7 @@
 
 using namespace HRGPara;
 
-
-
-
-///////////High CRC///////////
+///////////High CRC  串口数据 循环冗余码校验====///////////
 static unsigned char auchCRCHi[] = {
 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81,
 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0,
@@ -76,12 +73,12 @@ MoveControl::MoveControl()
 MoveControl::~MoveControl()
 {
     m_bRun = false;
-    m_pthread->interrupt();
-    m_pthread->join();
+    m_pthread->interrupt();// 中断线程===
+    m_pthread->join();// 等待线程结束==
     delete  m_pthread;
 }
 
-
+// 2d 里程计消息====================================================
 bool MoveControl::GetOdometryData(HRGPara::Pose2D &OdometryData)
 {
     bool bReadOK = false;
@@ -90,16 +87,16 @@ bool MoveControl::GetOdometryData(HRGPara::Pose2D &OdometryData)
     while( !bReadOK && (index<10) )
     {
         int drecv[3];
-        memset(drecv,0,3*sizeof(int));
+        memset(drecv,0, 3*sizeof(int));
         usleep(5000);
-        if( getusart(drecv) )
+        if( getusart(drecv) )// 获取串口数据？？
         {
             bReadOK = true;
 
             HRGPara::Pose2D temp;
-            temp.point.x   = double(drecv[0])/10000;
+            temp.point.x   = double(drecv[0])/10000;// 位置
             temp.point.y   = double(drecv[1])/10000;
-            temp.alfa      = double(drecv[2])/100;
+            temp.alfa      = double(drecv[2])/100; // 角度
             int dNum = temp.alfa / 360;
             if( abs(dNum) >= 1 )
             {
@@ -124,19 +121,24 @@ bool MoveControl::GetOdometryData(HRGPara::Pose2D &OdometryData)
     return bReadOK;
 }
 
+// 初始化 底盘控制对象===============================================
 void MoveControl::InitMoveControl(ORB_SLAM2::System *pORBSystem)
 {
     m_pORBSystem = pORBSystem;
+    // 新建一个线程======= 运行 底盘控制
     m_pthread    = new boost::thread(boost::bind(&MoveControl::Monitor_function, this));
 
 }
 
-bool MoveControl::UpdataCurCarPos_ByOdometry(HRGPara::Pose2D tempOdoData, HRGPara::Pose2D  &CurCar_pos, cv::Mat &Rcw, cv::Mat &Ow )
+//使用里程计消息更新 机器人当前位姿 旋转矩阵===
+bool MoveControl::UpdataCurCarPos_ByOdometry(HRGPara::Pose2D tempOdoData,
+                                                                                                        HRGPara::Pose2D  &CurCar_pos, 
+                                                                                                        cv::Mat &Rcw, cv::Mat &Ow )
 {
     //update the Pose2D
     float x_   = tempOdoData.point.x;
     float y_   = tempOdoData.point.y;
-    float Ang_ = tempOdoData.alfa;
+    float Ang_ = tempOdoData.alfa;// 角度
 
     float OffSet_X = x_ - m_Curr_Odo_POS.point.x;
     float OffSet_y = y_ - m_Curr_Odo_POS.point.y;
@@ -149,6 +151,7 @@ bool MoveControl::UpdataCurCarPos_ByOdometry(HRGPara::Pose2D tempOdoData, HRGPar
     CurCar_pos.point.y  = Deleta_Y   + m_Curr_ORB_POS.point.y;
     CurCar_pos.alfa     = Deleta_Ang + m_Curr_ORB_POS.alfa;
 
+// 角度值 0~360
     int dNum = CurCar_pos.alfa / 360;
     if( abs(dNum) >= 1 )
     {
@@ -171,6 +174,7 @@ bool MoveControl::UpdataCurCarPos_ByOdometry(HRGPara::Pose2D tempOdoData, HRGPar
         Ow.ptr<float>(0)[0] = CurCar_pos.point.x;
         Ow.ptr<float>(2)[0] = CurCar_pos.point.y;
 
+// 旋转矩阵=========
         tf::Matrix3x3 tf3d_Reference;
         tf3d_Reference.setValue(
                       m_Curr_ORB_Rcw.ptr<float>(0)[0], m_Curr_ORB_Rcw.ptr<float>(0)[1] ,m_Curr_ORB_Rcw.ptr<float>(0)[2],
@@ -179,10 +183,10 @@ bool MoveControl::UpdataCurCarPos_ByOdometry(HRGPara::Pose2D tempOdoData, HRGPar
                       );
 
         double roll,pitch, yaw;
-        tf3d_Reference.getEulerYPR(yaw, pitch, roll);
+        tf3d_Reference.getEulerYPR(yaw, pitch, roll);// 欧拉角
 
         pitch += Deleta_Ang * PI/ CONVERSION_PARA;
-        tf::Matrix3x3  tf3d_New;
+        tf::Matrix3x3  tf3d_New;// 更新 旋转矩阵======
         tf3d_New.setRPY(roll,pitch, yaw);
 
         Rcw = m_Curr_ORB_Rcw.clone();
@@ -202,12 +206,13 @@ bool MoveControl::UpdataCurCarPos_ByOdometry(HRGPara::Pose2D tempOdoData, HRGPar
     return true;
 }
 
+// 向底盘发送消息================两轮车===========================================
 void  MoveControl::SendVeloCommToMotorControl(float &LeftSteer_Velocity,  float &RightSteer_Velocity)
 {
-    short int  Left_wheel_Vel  = (short int)(LeftSteer_Velocity * 1000);
+    short int  Left_wheel_Vel  = (short int)(LeftSteer_Velocity * 1000);// 扩大1000倍 转换成 int
     short int  Right_wheel_Vel = (short int)(RightSteer_Velocity * 1000);
 
-    unsigned char send_buf[13];
+    unsigned char send_buf[13]; // 一次发送13个字节
     memset(send_buf, 0, sizeof(send_buf));
 
     send_buf[0]   = 0xaa;
@@ -218,7 +223,7 @@ void  MoveControl::SendVeloCommToMotorControl(float &LeftSteer_Velocity,  float 
     send_buf[5]   = 0x02;
     send_buf[6]   = 0x11;
 
-    //left wheel velocity
+    //left wheel velocity   两个字节========================
     send_buf[7]   = (unsigned char)(Left_wheel_Vel >> 8) & 0xFF;
     send_buf[8]   = (unsigned char)(Left_wheel_Vel) & 0xFF;
 
@@ -228,24 +233,25 @@ void  MoveControl::SendVeloCommToMotorControl(float &LeftSteer_Velocity,  float 
 
     short int CRC_Code = CRC16(send_buf, 11 );
 
-    //CRC check
+    //CRC check  CRC校验码==================================================
     send_buf[11]  = (unsigned char)(CRC_Code >> 8) & 0xFF;
     send_buf[12]  = (unsigned char)(CRC_Code) & 0xFF;
 
     m_cUART.UART_Send( send_buf, sizeof(send_buf));
 }
 
+// 从串口接受数据==========================
 bool  MoveControl::getusart(int *recv)
 {
     bool  bDataValid = false;
     unsigned char message[UART_BUF_LEN];
     memset(message,0,UART_BUF_LEN);
-    m_cUART.UART_Read(message);
+    m_cUART.UART_Read(message);//读取数据============
 
 
     for(int i=0; i<UART_BUF_LEN;i++)
     {
-        if(message[i] == 0xdd)
+        if(message[i] == 0xdd) // 数据头======
         {
             if(message[i+1] == 0x66)
             {
@@ -283,6 +289,7 @@ bool  MoveControl::getusart(int *recv)
     return bDataValid;
 }
 
+// 两轮车模型，根据 全局速度 计算两个轮子的速度=========================================
 void  MoveControl::AnalysisVeocity( HRGPara::Pose2D  AssumptionVelocity, float &LeftSteer_Velocity,  float &RightSteer_Velocity )
 {
     double planPos_x = CYCLETIME * AssumptionVelocity.point.x;
@@ -329,6 +336,7 @@ void  MoveControl::AnalysisVeocity( HRGPara::Pose2D  AssumptionVelocity, float &
 }
 
 
+// 由规划路径 计算 全局速度====================
 bool  MoveControl::CalculateVelocity( HRGPara::Pose2D Pos_Start, HRGPara::Pose2D Pos_End,
                                       double time_dif, HRGPara::Pose2D &Velocity_Loc )
 {
@@ -384,6 +392,8 @@ void  MoveControl::SetCurCarPos(HRGPara::Pose2D  &CurCar_pos,  cv::Mat  &Rcw, cv
     lock.unlock();
 }
 
+
+// 主线程===========================================
 void  MoveControl::Monitor_function()
 {
     double time_Start = 0;
@@ -392,7 +402,7 @@ void  MoveControl::Monitor_function()
 
     while(m_bRun)
     {
-        double sleepTime_Start = HRGPara::GetSystemTime();
+        double sleepTime_Start = HRGPara::GetSystemTime();// 系统时间===
 
         HRGPara::Pose2D tempOdometryData;
         bool flag1 = GetOdometryData(tempOdometryData);
@@ -403,22 +413,22 @@ void  MoveControl::Monitor_function()
         cv::Mat Rcw, Ow;
 
         //bool flag2;
-        bool flag2 = m_pORBSystem->GetRobotPos(Rcw, Ow);
+        bool flag2 = m_pORBSystem->GetRobotPos(Rcw, Ow);// 机器人当前位姿========
 
         if(flag1 && flag2)
         {
             float x_, y_, Angle_;
-            GetPosDatafromMat(Rcw, Ow, x_, y_, Angle_);
+            GetPosDatafromMat(Rcw, Ow, x_, y_, Angle_);// 由机器人3d位姿 计算 2d位置和角度======
 
             cout<<"MoveControl(ORB valid): "<<x_<<" "<<y_<<" "<<Angle_<<endl;
-            HRGPara::Pose2D   Curr_ORB_POS_Credible(x_, y_, Angle_);
+            HRGPara::Pose2D   Curr_ORB_POS_Credible(x_, y_, Angle_);// 机器人当前2d位置和角度==
 
-            //refresh the ORB & Odo information
+            //refresh the ORB & Odo information   更新2d位姿 信息=====
             m_Last_ORB_POS = m_Curr_ORB_POS;
             m_Curr_ORB_POS = Curr_ORB_POS_Credible;
             SetCurCarPos(m_Curr_ORB_POS, Rcw, Ow);
 
-            m_Last_Odo_POS = m_Curr_Odo_POS;
+            m_Last_Odo_POS = m_Curr_Odo_POS;// 里程计信息=====
             m_Curr_Odo_POS = tempOdometryData;
 
             m_Last_ORB_Rcw = m_Curr_ORB_Rcw.clone();
@@ -433,7 +443,7 @@ void  MoveControl::Monitor_function()
             CalculateVelocity( m_Last_Odo_Ve, m_Curr_Odo_Ve, time_dif, m_Velocity );
 
         }
-        else if(flag1 && !flag2)
+        else if(flag1 && !flag2)//只有里程计信息====
         {
             HRGPara::Pose2D  CurCar_pos;
             cv::Mat Rcw_,Ow_;
@@ -465,6 +475,7 @@ void  MoveControl::Monitor_function()
     }
 }
 
+// 3d位姿 转换到 2d位姿
 void  MoveControl::GetPosDatafromMat(cv::Mat Rcw, cv::Mat Ow, float &x_, float &y_, float &Angle_)
 {
     cv::Mat  Rwc = Rcw.t();
