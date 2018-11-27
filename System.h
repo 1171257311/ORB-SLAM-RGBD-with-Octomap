@@ -1,6 +1,6 @@
 /**
 * This file is part of ORB-SLAM2.
-* 保存 octomap 相机参数独立成一个类进行管理=====
+* 保存 octomap 相机参数独立成一个类进行管理==一些机器人位置等接口
 */
 
 
