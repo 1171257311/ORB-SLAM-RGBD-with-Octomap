@@ -71,6 +71,9 @@ private:
     uint16_t     lastKeyframeSize =0;
     cv::Mat mCameraPose;
     std::mutex mMutexCamera;
+    
+    
+    // ==================new===============
  private:
 
     double fx, fy, cx, cy;
