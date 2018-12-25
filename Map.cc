@@ -18,6 +18,8 @@
 * along with ORB-SLAM2. If not, see <http://www.gnu.org/licenses/>.
 */
 
+// 地图保存 另一个类似的实现
+// https://github.com/MRwangmaomao/ORB_SLAM2_SaveMap_Catkin/blob/master/src/Map.cc
 #include<mutex>
 #include<climits>
 #include <sys/stat.h>
